@@ -1,10 +1,1 @@
-{
-	"functions": {
-		"api/proxy": {
-			"maxDuration": 30
-		},
-		"api/clean-pdf": {
-			"maxDuration": 30
-		}
-	}
-}
+{}
