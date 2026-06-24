@@ -157,7 +157,7 @@
 				class="h-full w-full border-0"
 				onload={handleIframeLoad}
 				onerror={handleIframeError}
-				sandbox="allow-scripts allow-forms allow-popups"
+				sandbox="allow-scripts allow-forms allow-popups allow-same-origin"
 				title="Cleaned page"
 			></iframe>
 		{:else if isPdf}
