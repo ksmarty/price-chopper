@@ -1,0 +1,12 @@
+.DS_Store
+node_modules
+package-lock.json
+/build
+/.svelte-kit
+/package
+.vite
+.env
+.env.*
+!.env.example
+/static/pdfjs
+.vercel

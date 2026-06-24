@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>Price Test Page</title>
+</head>
+<body>
+	<h1>Dinner Menu</h1>
+	<ul class="menu-items">
+		<li class="item">
+			<span class="name">Spaghetti Carbonara</span>
+			<span class="price">$18.95</span>
+		</li>
+		<li class="item">
+			<span class="name">Margherita Pizza</span>
+			<span class="price">$16.99</span>
+		</li>
+		<li class="item">
+			<span class="name">Caesar Salad</span>
+			<span class="price">$12.50</span>
+		</li>
+		<li class="item">
+			<span class="name">Tiramisu</span>
+			<span class="price">$9.00</span>
+		</li>
+	</ul>
+
+	<h2>Sale Items</h2>
+	<div class="sale-item">
+		<span class="product">Winter Jacket</span>
+		<span class="old-price">Was $129.99</span>
+		<span class="new-price">Now $79.99</span>
+	</div>
+	<div class="sale-item">
+		<span class="product">Running Shoes</span>
+		<span class="price">$89.99</span>
+	</div>
+
+	<h2>Euro Prices</h2>
+	<div class="euro-item">
+		<span>€24.95</span>
+	</div>
+	<div class="euro-item">
+		<span>€49,99</span>
+	</div>
+
+	<h2>Dynamic Content (JS-loaded)</h2>
+	<div id="dynamic-container"></div>
+
+	<script>
+		// Simulate dynamically loaded content (like restaurant menus loading via JS)
+		setTimeout(function () {
+			var container = document.getElementById('dynamic-container');
+			var items = [
+				{ name: 'Grilled Salmon', price: '32.00' },
+				{ name: 'Steak Frites', price: '45.00' },
+				{ name: 'Lobster Risotto', price: '38.00' },
+			];
+			var html = '<ul class="dynamic-menu">';
+			for (var i = 0; i < items.length; i++) {
+				html +=
+					'<li class="dynamic-item"><span class="d-name">' +
+					items[i].name +
+					'</span><span id="item' + i + '-price" class="d-price" data-amount="' +
+					items[i].price +
+					'">$' +
+					items[i].price +
+					'</span></li>';
+			}
+			html += '</ul>';
+			container.innerHTML = html;
+		}, 500);
+	</script>
+</body>
+</html>
