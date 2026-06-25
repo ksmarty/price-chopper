@@ -1,3 +1,13 @@
+declare module 'pdfjs-dist/build/pdf.worker.js' {
+	interface WorkerMessageHandler {
+		setup(handler: unknown, port: unknown): void;
+	}
+	const workerModule: {
+		WorkerMessageHandler: WorkerMessageHandler;
+	};
+	export = workerModule;
+}
+
 declare module 'pdfjs-dist/build/pdf.js' {
 	interface PDFJS {
 		version: string;

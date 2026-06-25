@@ -16,9 +16,15 @@ interface PriceRect {
 
 function getTextItems(pdfData: Uint8Array): Promise<TextItem[][]> {
 	return new Promise((resolve, reject) => {
-		import('pdfjs-dist/build/pdf.js').then((mod) => {
+		Promise.all([
+			import('pdfjs-dist/build/pdf.js'),
+			import('pdfjs-dist/build/pdf.worker.js'),
+		]).then(([mod, workerMod]) => {
 			const pdfjsLib = (mod as any).default || mod;
-			pdfjsLib.disableWorker = true;
+			const worker = (workerMod as any).default || workerMod;
+			if (worker.WorkerMessageHandler && !(globalThis as any).pdfjsWorker) {
+				(globalThis as any).pdfjsWorker = { WorkerMessageHandler: worker.WorkerMessageHandler };
+			}
 			const loadingTask = pdfjsLib.getDocument({ data: pdfData });
 			loadingTask.promise.then(async (doc: any) => {
 				const pageItems: TextItem[][] = [];
