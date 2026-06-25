@@ -78,6 +78,7 @@ export async function POST({ request, url }) {
 		return json(
 			{
 				error: 'Failed to process PDF. The file may be corrupted or password-protected.',
+				detail: err instanceof Error ? err.message : String(err),
 			},
 			{ status: 500 },
 		);
@@ -140,9 +141,11 @@ export async function GET({ url }) {
 			},
 		});
 	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
 		return json(
 			{
 				error: 'Failed to process PDF. The file may be corrupted or password-protected.',
+				detail: msg,
 			},
 			{ status: 500 },
 		);
