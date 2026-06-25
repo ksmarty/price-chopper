@@ -18,6 +18,7 @@ function getTextItems(pdfData: Uint8Array): Promise<TextItem[][]> {
 	return new Promise((resolve, reject) => {
 		import('pdfjs-dist/build/pdf.js').then((mod) => {
 			const pdfjsLib = (mod as any).default || mod;
+			pdfjsLib.disableWorker = true;
 			const loadingTask = pdfjsLib.getDocument({ data: pdfData });
 			loadingTask.promise.then(async (doc: any) => {
 				const pageItems: TextItem[][] = [];
