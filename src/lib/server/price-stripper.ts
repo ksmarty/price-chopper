@@ -100,6 +100,21 @@ const META_PRICE_PROPERTIES = [
 
 const ITEMPROP_PRICE_NAMES = ['price', 'priceCurrency', 'lowPrice', 'highPrice', 'priceRange', 'offers'];
 
+// Containers whose entire contents are a price. These are blanked wholesale because
+// the amount and currency symbol are often split across separate child elements
+// (e.g. Squarespace menu blocks: <span class="currency-sign">$</span>86), which means
+// the per-text-node regexes never see a full "$86" to match.
+const PRICE_CONTAINER_SELECTORS = [
+	'.menu-item-price-top',
+	'.menu-item-price-bottom',
+	'.menu-item-price',
+	'.currency-sign',
+	'.sqs-money-native',
+	'.product-price',
+	'.product-mark-price',
+	'.sqs-product-price',
+];
+
 export interface StripOptions {
 	currency: string;
 }
@@ -157,6 +172,24 @@ export function stripPrices(html: string, options: StripOptions): StripResult {
 
 	for (const { node, newText } of textNodes) {
 		node.data = newText;
+	}
+
+	// Blank known price-container elements wholesale (handles split currency/amount markup).
+	for (const selector of PRICE_CONTAINER_SELECTORS) {
+		$(selector).each((_, el) => {
+			let had = false;
+			$(el)
+				.find('*')
+				.addBack()
+				.contents()
+				.each((_, child) => {
+					if (child.type === 'text' && (child as Text).data?.trim()) {
+						(child as Text).data = '';
+						had = true;
+					}
+				});
+			if (had) priceCount++;
+		});
 	}
 
 	PRICE_ATTRIBUTES.forEach((key) => {

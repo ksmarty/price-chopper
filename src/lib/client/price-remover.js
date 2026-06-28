@@ -133,9 +133,38 @@ function rewriteFontUrls(root) {
 	}
 }
 
+// Containers whose entire contents are a price. Blanked wholesale because the amount
+// and currency symbol are often split across separate child elements (e.g. Squarespace
+// menu blocks: <span class="currency-sign">$</span>86), so the per-text-node regexes
+// never see a full "$86" to match.
+var PRICE_CONTAINER_SELECTORS = [
+	'.menu-item-price-top',
+	'.menu-item-price-bottom',
+	'.menu-item-price',
+	'.currency-sign',
+	'.sqs-money-native',
+	'.product-price',
+	'.product-mark-price',
+	'.sqs-product-price',
+];
+
+function blankPriceContainers(root) {
+	for (var s = 0; s < PRICE_CONTAINER_SELECTORS.length; s++) {
+		var els = root.querySelectorAll(PRICE_CONTAINER_SELECTORS[s]);
+		for (var e = 0; e < els.length; e++) {
+			var tw = document.createTreeWalker(els[e], NodeFilter.SHOW_TEXT, null);
+			var n;
+			while ((n = tw.nextNode())) {
+				if (n.nodeValue && n.nodeValue.trim()) n.nodeValue = '';
+			}
+		}
+	}
+}
+
 function clean(root, rxs) {
 	rewriteFontUrls(root);
 	walk(root, rxs);
+	blankPriceContainers(root);
 	var overlays = root.querySelectorAll(
 		'.location-blackout, .blackout, .page-overlay, .loading-overlay, .site-overlay, .splash-screen, .w-condition-invisible',
 	);
