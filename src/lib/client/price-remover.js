@@ -85,7 +85,47 @@ var FONT_URL_RE = /\burl\(\s*(['"]?)((?!data:)[^'")]+)\1\s*\)/g;
 function proxyUrl(ref, base) {
 	var abs;
 	try { abs = new URL(ref, base).href; } catch (e) { return null; }
-	return window.location.origin + '/api/font-proxy?url=' + encodeURIComponent(abs);
+	return ORIGIN + '/api/font-proxy?url=' + encodeURIComponent(abs);
+}
+
+var fetchedUrls = {};
+
+function fetchAndInline(href, baseHref, refNode) {
+	if (fetchedUrls[href]) return;
+	fetchedUrls[href] = true;
+	fetch(ORIGIN + '/api/font-proxy?url=' + encodeURIComponent(href))
+		.then(function (r) { return r.ok ? r.text() : null; })
+		.then(function (css) {
+			if (!css) return;
+			var baseUrl = (function () {
+				try { return new URL(href, baseHref).href; } catch (e) { return baseHref; }
+			})();
+			var rewritten = css.replace(FONT_URL_RE, function (m, q, ref) {
+				var proxied = proxyUrl(ref, baseUrl);
+				return proxied ? 'url(' + q + proxied + q + ')' : m;
+			});
+			var style = document.createElement('style');
+			style.setAttribute('data-fp-processed', '');
+			style.textContent = rewritten;
+			if (refNode.parentNode) refNode.parentNode.insertBefore(style, refNode);
+		})
+		.catch(function () {});
+}
+
+function processLink(link, baseHref) {
+	if (link.hasAttribute('data-fp-processed')) return;
+	link.setAttribute('data-fp-processed', '');
+	var href = link.getAttribute('href');
+	if (!href) return;
+
+	var resolved = (function () {
+		try { return new URL(href, baseHref).href; } catch (e) { return href; }
+	})();
+
+	// Don't remove the link (Squarespace JS may re-add it). Instead, fetch the CSS
+	// through proxy and insert an inlined <style> alongside it. If the direct CDN
+	// load fails (ERR_CONTENT_DECODING_FAILED), our inlined style still works.
+	fetchAndInline(resolved, baseHref, link);
 }
 
 function rewriteFontUrls(root) {
@@ -107,35 +147,43 @@ function rewriteFontUrls(root) {
 	// <link rel="stylesheet"> — fetch through proxy, inline, rewrite
 	var links = root.querySelectorAll('link[rel="stylesheet"]:not([data-fp-processed])');
 	for (var i = 0; i < links.length; i++) {
-		var link = links[i];
-		link.setAttribute('data-fp-processed', '');
-		var href = link.getAttribute('href');
-		if (!href) continue;
-		(function (lk, origHref) {
-			fetch(window.location.origin + '/api/font-proxy?url=' + encodeURIComponent(origHref))
-				.then(function (r) { return r.ok ? r.text() : null; })
-				.then(function (css) {
-					if (!css) return;
-					var baseUrl = (function () {
-						try { return new URL(origHref, baseHref).href; } catch (e) { return baseHref; }
-					})();
-					var rewritten = css.replace(FONT_URL_RE, function (m, q, ref) {
-						var proxied = proxyUrl(ref, baseUrl);
-						return proxied ? 'url(' + q + proxied + q + ')' : m;
-					});
-					var style = document.createElement('style');
-					style.setAttribute('data-fp-processed', '');
-					style.textContent = rewritten;
-					if (lk.parentNode) lk.parentNode.replaceChild(style, lk);
-				})
-				.catch(function () {});
-		})(link, href);
+		processLink(links[i], baseHref);
+	}
+
+	// <link rel="preload" as="style"> — same treatment (Squarespace and others use these)
+	var preloads = root.querySelectorAll('link[rel="preload"][as="style"]:not([data-fp-processed])');
+	for (var i = 0; i < preloads.length; i++) {
+		processLink(preloads[i], baseHref);
+	}
+}
+
+function blankTextNodes(el) {
+	var tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+	var n, v, b;
+	while ((n = tw.nextNode())) {
+		v = n.nodeValue;
+		b = v.replace(/./g, ' ');
+		if (b !== v) n.nodeValue = b;
 	}
 }
 
 function clean(root, rxs) {
 	rewriteFontUrls(root);
 	walk(root, rxs);
+
+	// Handle split prices where currency symbol and amount are in separate sibling
+	// nodes (e.g. <span class="currency-sign">$</span> next to "8"). Use generic
+	// selectors to cover Squarespace, WooCommerce, BigCommerce, etc.
+	var priceContainers = root.querySelectorAll(
+		'.currency-sign, .sqs-money-native, .menu-item-price-top, .menu-item-price-bottom, ' +
+		'[class*="price"], [class*="Price"], [class*="menu-price"], [class*="product-price"], ' +
+		'[itemprop="price"], [itemprop="lowPrice"], [itemprop="highPrice"], ' +
+		'[data-price], [data-product-price]'
+	);
+	for (var i = 0; i < priceContainers.length; i++) {
+		blankTextNodes(priceContainers[i]);
+	}
+
 	var overlays = root.querySelectorAll(
 		'.location-blackout, .blackout, .page-overlay, .loading-overlay, .site-overlay, .splash-screen, .w-condition-invisible',
 	);
@@ -186,6 +234,16 @@ function getParam(name) {
 
 function run() {
 	clean(document.body, rxs);
+
+	// Also process existing <link> elements in <head> that weren't covered
+	// by inlineCss (e.g., <link rel="preload" as="style">)
+	var baseHref = (document.querySelector('base') || {}).href || window.location.href;
+	var headLinks = document.head.querySelectorAll(
+		'link[rel="stylesheet"]:not([data-fp-processed]), link[rel="preload"][as="style"]:not([data-fp-processed])'
+	);
+	for (var i = 0; i < headLinks.length; i++) {
+		processLink(headLinks[i], baseHref);
+	}
 }
 
 var cur = getParam('currency') || 'auto';
@@ -197,14 +255,62 @@ setTimeout(run, 3000);
 setTimeout(run, 10000);
 setTimeout(run, 30000);
 
+function proxyAddedScripts(node, baseHref) {
+	var stack = [node];
+	while (stack.length) {
+		var el = stack.pop();
+		if (el.tagName === 'SCRIPT' && el.src && !el.hasAttribute('data-fp-processed')) {
+			el.setAttribute('data-fp-processed', '');
+			try {
+				el.src = ORIGIN + '/api/font-proxy?url=' + encodeURIComponent(new URL(el.src, baseHref).href);
+			} catch (e) {}
+		}
+		if (el.children) {
+			for (var k = 0; k < el.children.length; k++) stack.push(el.children[k]);
+		}
+	}
+}
+
 var cleaning = false;
-var obs = new MutationObserver(function () {
+var obs = new MutationObserver(function (mutations) {
+	var baseHref = (document.querySelector('base') || {}).href || window.location.href;
+	for (var i = 0; i < mutations.length; i++) {
+		for (var j = 0; j < mutations[i].addedNodes.length; j++) {
+			proxyAddedScripts(mutations[i].addedNodes[j], baseHref);
+		}
+	}
 	if (cleaning) return;
 	cleaning = true;
 	clean(document.body, rxs);
 	cleaning = false;
 });
-obs.observe(document.body, { childList: true, subtree: true, characterData: true });
+// childList only (no characterData) — avoids infinite loops from our own text blanking.
+// Timers at 3s/10s/30s handle any price text changes within existing elements.
+obs.observe(document.body, { childList: true, subtree: true });
+
+// Also observe <head> for dynamically-added <link> and <script> elements (Squarespace etc.)
+var headObs = new MutationObserver(function (mutations) {
+	var baseHref = (document.querySelector('base') || {}).href || window.location.href;
+	for (var i = 0; i < mutations.length; i++) {
+		if (mutations[i].type === 'attributes' && mutations[i].attributeName === 'rel') {
+			var link = mutations[i].target;
+			if (link.tagName === 'LINK' && link.relList.contains('stylesheet')) {
+				processLink(link, baseHref);
+			}
+		}
+		for (var j = 0; j < mutations[i].addedNodes.length; j++) {
+			proxyAddedScripts(mutations[i].addedNodes[j], baseHref);
+			var node = mutations[i].addedNodes[j];
+			if (node.tagName === 'LINK') {
+				var rel = node.getAttribute('rel') || '';
+				if (rel === 'stylesheet' || (rel === 'preload' && node.getAttribute('as') === 'style')) {
+					processLink(node, baseHref);
+				}
+			}
+		}
+	}
+});
+headObs.observe(document.head, { childList: true, subtree: true, attributes: true, attributeFilter: ['rel'] });
 
 if ('serviceWorker' in navigator && !navigator.serviceWorker.controller) {
 	navigator.serviceWorker.register('/sw.js').catch(function () {});

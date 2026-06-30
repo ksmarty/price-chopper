@@ -3,6 +3,7 @@ import CLIENT_SCRIPT from '$lib/client/price-remover.js?raw';
 
 const CSS_LINK_RE = /<link[^>]*?\brel=["']stylesheet["'][^>]*?\bhref=["']([^"']+)["'][^>]*\/?>/gi;
 const CSS_URL_RE = /\burl\(\s*(['"]?)((?!data:)[^'")]+)\1\s*\)/g;
+const SVG_USE_RE = /(<use[^>]*?xlink:href=["'])([^"']*\.svg[^"']*)(["'][^>]*>)/gi;
 
 function resolveUrl(ref: string, base: string): string {
 	try {
@@ -13,17 +14,18 @@ function resolveUrl(ref: string, base: string): string {
 }
 
 async function inlineCss(html: string, pageUrl: string, fetchFn: typeof fetch, proxyOrigin: string): Promise<string> {
-	const matches: Array<{ full: string; href: string }> = [];
+	const matches: Array<{ full: string; href: string; index: number }> = [];
 	let m: RegExpExecArray | null;
 	while ((m = CSS_LINK_RE.exec(html)) !== null) {
-		matches.push({ full: m[0], href: m[1] });
+		matches.push({ full: m[0], href: m[1], index: m.index });
 	}
 	if (matches.length === 0) return html;
 
 	const pageBase = pageUrl.replace(/\/[^/]*$/, '/');
 	let result = html;
 
-	for (const { full, href } of matches) {
+	for (let i = matches.length - 1; i >= 0; i--) {
+		const { full, href, index } = matches[i];
 		const cssUrl = resolveUrl(href, pageBase);
 		if (!cssUrl) continue;
 
@@ -38,7 +40,7 @@ async function inlineCss(html: string, pageUrl: string, fetchFn: typeof fetch, p
 				return `url(${q}${proxyOrigin}/api/font-proxy?url=${encodeURIComponent(absolute)}${q})`;
 			});
 
-			result = result.replace(full, `<style>${css}</style>`);
+			result = result.substring(0, index) + `<style>${css}</style>` + result.substring(index + full.length);
 		} catch {
 			continue;
 		}
@@ -110,14 +112,21 @@ export async function GET({ url, fetch }) {
 	html = await inlineCss(html, targetUrl, fetch, url.origin);
 	html = rewriteInlineStyles(html, targetUrl, url.origin);
 
+	// Rewrite SVG <use xlink:href> references through font proxy (same-origin SVG fails with base tag)
+	html = html.replace(SVG_USE_RE, (_match: string, before: string, ref: string, after: string) => {
+		const absolute = resolveUrl(ref, targetUrl);
+		if (!absolute) return _match;
+		return `${before}${url.origin}/api/font-proxy?url=${encodeURIComponent(absolute)}${after}`;
+	});
+
 	const baseTag = `<base href="${targetUrl.replace(/\/[^/]*$/, '/')}">`;
 	const withBase = html.replace('<head>', `<head>${baseTag}`);
 
 	const withScript = withBase.replace(
 		'</body>',
-		(match) => `<script>${CLIENT_SCRIPT}</script>${match}`,
+		(match) => `<script>var ORIGIN='${url.origin}';${CLIENT_SCRIPT}</script>${match}`,
 	);
-	const result = withScript === withBase ? withBase + `<script>${CLIENT_SCRIPT}</script>` : withScript;
+	const result = withScript === withBase ? withBase + `<script>var ORIGIN='${url.origin}';${CLIENT_SCRIPT}</script>` : withScript;
 
 	setCache(cacheKey, result);
 

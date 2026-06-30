@@ -1,3 +1,5 @@
+const STRIP_HEADERS = ['content-encoding', 'content-length', 'transfer-encoding'];
+
 export async function GET({ url, fetch }) {
 	const targetUrl = url.searchParams.get('url');
 	if (!targetUrl) {
@@ -5,11 +7,17 @@ export async function GET({ url, fetch }) {
 	}
 
 	try {
-		const resp = await fetch(targetUrl);
+		const controller = new AbortController();
+		const timeout = setTimeout(() => controller.abort(), 20000);
+		const resp = await fetch(targetUrl, { signal: controller.signal });
+		clearTimeout(timeout);
 		const headers = new Headers(resp.headers);
+		for (const h of STRIP_HEADERS) headers.delete(h);
 		headers.set('Access-Control-Allow-Origin', '*');
-		return new Response(resp.body, { status: resp.status, headers });
-	} catch {
-		return new Response('Failed to fetch asset', { status: 502 });
+		headers.set('Content-Type', resp.headers.get('content-type') || 'application/octet-stream');
+		const buf = await resp.arrayBuffer();
+		return new Response(buf, { status: resp.status, headers });
+	} catch (e) {
+		return new Response('Failed to fetch asset: ' + (e as Error)?.message, { status: 502 });
 	}
 }
